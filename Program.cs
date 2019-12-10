@@ -3,6 +3,8 @@ using Microsoft.Azure.EventHubs;
 using System.Text;
 using System.Threading.Tasks;
 using System.Text.Json;
+using System.IO;
+using CsvHelper;
 
 namespace EventHubMsgs
 {
@@ -27,7 +29,17 @@ namespace EventHubMsgs
 
             eventHubClient = EventHubClient.CreateFromConnectionString(connectionStringBuilder.ToString());
 
-            await SendMessagesToEventHub(1000);
+            using (var reader = new StreamReader("FeedData.csv"))
+            using (var csv = new CsvReader(reader))
+            {    
+                var records = csv.GetRecords<CustomEvent>();
+
+                foreach (var rec in records)
+                {
+                    await SendMessagesToEventHub(rec);
+                    await Task.Delay(1000);
+                }
+            }
 
             await eventHubClient.CloseAsync();
 
@@ -36,36 +48,19 @@ namespace EventHubMsgs
         }
 
         // Uses the event hub client to send 100 messages to the event hub.
-        private static async Task SendMessagesToEventHub(int numMessagesToSend)
+        private static async Task SendMessagesToEventHub(CustomEvent customEvent)
         {
-            CustomEvent msg = new CustomEvent();
-
-            for (var i = 0; i < numMessagesToSend; i++)
+            try
             {
-                try
-                {
-                    msg.ID = Guid.NewGuid().ToString();
-                    msg.DeviceID = "TestClient";
-                    msg.CaptureTime = DateTime.UtcNow;
-                    msg.Temp = NextRandomRange(22.0, 26.0);
-                    msg.Humidity = NextRandomRange(66.0, 68.0);
+                string msgJson = JsonSerializer.Serialize(customEvent);  
 
-                    string msgJson = JsonSerializer.Serialize(msg);  
-
-                    Console.WriteLine($"Sending message: {msgJson}");
-                    await eventHubClient.SendAsync(new EventData(Encoding.UTF8.GetBytes(msgJson)));
-
-                    await Task.Delay(1000);
-                }
-                catch (Exception exception)
-                {
-                    Console.WriteLine($"{DateTime.Now} > Exception: {exception.Message}");
-                }
-
-                await Task.Delay(10);
+                Console.WriteLine($"Sending message: {msgJson}");
+                await eventHubClient.SendAsync(new EventData(Encoding.UTF8.GetBytes(msgJson)));
             }
-
-            Console.WriteLine($"{numMessagesToSend} messages sent.");
+            catch (Exception exception)
+            {
+                Console.WriteLine($"{DateTime.Now} > Exception: {exception.Message}");
+            }
         }
 
         private static double NextRandomRange(double minimum, double maximum)
